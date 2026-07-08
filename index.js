@@ -106,13 +106,10 @@ async function getCandidate(candidateId) {
 }
 
 async function getPendingScorecards(jobId) {
-  // Find interviews that happened but have no submitted scorecard
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // >24hrs ago
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const interviews = await gemGet(
-    `/ats/v0/scheduled_interviews/?ends_before=${cutoff}&application_id=` +
-    `&per_page=500`
+    `/ats/v0/scheduled_interviews/?job_id=${jobId}&ends_before=${cutoff}&per_page=500`
   ).catch(() => []);
-  // Count interviewers with no scorecard_id
   let pending = 0;
   for (const interview of interviews) {
     for (const interviewer of interview.interviewers || []) {
@@ -123,7 +120,7 @@ async function getPendingScorecards(jobId) {
 }
 
 // ── Slack Block Kit formatter ────────────────────────────────────────────────
-function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts = new Map(), candidateNames = new Map()) {
+function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts = new Map(), candidateNames = new Map(), pendingScorecards = 0) {
   const EXCLUDED_STAGES = ['application review', 'new applicant'];
 
   // Group by stage, skipping inbox/review stages
@@ -160,10 +157,16 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   const loc = jobLocation(job);
   const locText = loc ? `📍 ${loc}` : null;
 
+  // Recruiter
+  const r = applications[0]?.recruiter;
+  const recruiterName = r?.name || [r?.first_name, r?.last_name].filter(Boolean).join(' ') || null;
+  const recruiterText = recruiterName ? `👤 ${recruiterName}` : null;
+
   const metaParts = [
     `*${total} active candidate${total !== 1 ? 's' : ''}*`,
     locText,
     reqAgeText,
+    recruiterText,
   ].filter(Boolean);
 
   const blocks = [
@@ -184,7 +187,12 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   function candidateLink(app) {
     const c = candidateNames.get(app.candidate_id);
     if (!c) return null;
-    return c.url ? `<${c.url}|${c.name}>` : c.name;
+    const nameStr = c.url ? `<${c.url}|${c.name}>` : c.name;
+    const days = app.last_activity_at
+      ? Math.floor((Date.now() - new Date(app.last_activity_at)) / 86_400_000)
+      : null;
+    const stale = (days !== null && days > 5) ? `  _${days}d ago_` : '';
+    return nameStr + stale;
   }
 
   for (let i = 0; i < stageEntries.length; i++) {
@@ -213,12 +221,13 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   }
 
   blocks.push({ type: 'divider' });
+  const footerParts = [
+    `_Live from Gem ATS · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}_`,
+    pendingScorecards > 0 ? `⚠️ *${pendingScorecards} pending scorecard${pendingScorecards !== 1 ? 's' : ''}*` : null,
+  ].filter(Boolean);
   blocks.push({
     type: 'context',
-    elements: [{
-      type: 'mrkdwn',
-      text: `_Live from Gem ATS · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}_`
-    }]
+    elements: [{ type: 'mrkdwn', text: footerParts.join('  ·  ') }]
   });
 
   return blocks;
@@ -272,10 +281,11 @@ app.post('/slack/pipeline', async (req, res) => {
     }
 
     const job = jobs[0];
-    const [applications, allApplications, stageOrder] = await Promise.all([
+    const [applications, allApplications, stageOrder, pendingScorecards] = await Promise.all([
       getActiveApplications(job.id),
       getAllApplications(job.id),
-      getStageOrder(job.id)
+      getStageOrder(job.id),
+      getPendingScorecards(job.id)
     ]);
 
     // Build stage counts from ALL applications for accurate funnel %
@@ -318,7 +328,7 @@ app.post('/slack/pipeline', async (req, res) => {
     );
     const candidateNames = new Map(nameEntries.filter(([, c]) => c));
 
-    const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames);
+    const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames, pendingScorecards);
     await postBack(responseUrl, { response_type: 'in_channel', blocks });
 
   } catch (err) {
