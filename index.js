@@ -72,6 +72,12 @@ async function getActiveApplications(jobId) {
   return gemGet(`/ats/v0/applications/?job_id=${jobId}&status=active&per_page=500`);
 }
 
+async function getStageOrder(jobId) {
+  // Returns a Map of stage name → priority (lower = earlier in pipeline)
+  const stages = await gemGet(`/ats/v0/jobs/${jobId}/stages`).catch(() => []);
+  return new Map(stages.map(s => [s.name, s.priority ?? 999]));
+}
+
 async function getPendingScorecards(jobId) {
   // Find interviews that happened but have no submitted scorecard
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // >24hrs ago
@@ -90,8 +96,8 @@ async function getPendingScorecards(jobId) {
 }
 
 // ── Slack Block Kit formatter ────────────────────────────────────────────────
-function buildBlocks(job, applications) {
-  // Group by stage, preserving insertion order (stages appear as encountered)
+function buildBlocks(job, applications, stageOrder = new Map()) {
+  // Group by stage
   const stageMap = new Map();
   for (const app of applications) {
     const stage = app.current_stage?.name || 'Unknown';
@@ -99,8 +105,17 @@ function buildBlocks(job, applications) {
     stageMap.get(stage).push(app);
   }
 
+  // Sort stages by pipeline priority; unknown stages go last
+  const sortedStageMap = new Map(
+    [...stageMap.entries()].sort(([a], [b]) => {
+      const pa = stageOrder.get(a) ?? 999;
+      const pb = stageOrder.get(b) ?? 999;
+      return pa - pb;
+    })
+  );
+
   const total = applications.length;
-  const maxCount = Math.max(...[...stageMap.values()].map(a => a.length), 1);
+  const maxCount = Math.max(...[...sortedStageMap.values()].map(a => a.length), 1);
 
   const blocks = [
     {
@@ -117,7 +132,7 @@ function buildBlocks(job, applications) {
     { type: 'divider' }
   ];
 
-  for (const [stage, apps] of stageMap) {
+  for (const [stage, apps] of sortedStageMap) {
     const count = apps.length;
     // Bar: scale to max 12 blocks
     const filled = Math.round((count / maxCount) * 12);
@@ -191,7 +206,10 @@ app.post('/slack/pipeline', async (req, res) => {
     }
 
     const job = jobs[0];
-    const applications = await getActiveApplications(job.id);
+    const [applications, stageOrder] = await Promise.all([
+      getActiveApplications(job.id),
+      getStageOrder(job.id)
+    ]);
 
     if (!applications.length) {
       return postBack(responseUrl, {
@@ -200,7 +218,7 @@ app.post('/slack/pipeline', async (req, res) => {
       });
     }
 
-    const blocks = buildBlocks(job, applications);
+    const blocks = buildBlocks(job, applications, stageOrder);
     await postBack(responseUrl, { response_type: 'in_channel', blocks });
 
   } catch (err) {
