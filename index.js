@@ -257,38 +257,11 @@ async function showJobPicker(responseUrl, message) {
 app.post('/slack/pipeline', async (req, res) => {
   if (SLACK_SIGNING_SECRET && !verifySlack(req)) return res.status(401).json({ error: 'Invalid signature' });
 
-  const roleName = req.body.text?.trim();
   const responseUrl = req.body.response_url;
-
-  if (!roleName) {
-    res.json({ response_type: 'ephemeral', text: '🔍  Loading open roles...' });
-    return showJobPicker(responseUrl, 'Select a role to view its pipeline:');
-  }
-
-  res.json({ response_type: 'ephemeral', text: `🔍  Fetching pipeline for *${roleName}*...` });
+  res.json({ response_type: 'ephemeral', text: '🔍  Loading open roles...' });
 
   try {
-    const jobs = await findJobs(roleName);
-
-    if (!jobs.length) {
-      return showJobPicker(responseUrl, `❓  No match for *"${roleName}"*. Select a role:`);
-    }
-
-    if (jobs.length > 1) {
-      const lines = jobs.map(j => {
-        const loc = jobLocation(j);
-        const city = loc.split(',')[0].trim().toLowerCase();
-        const hint = city ? `\`/pipeline ${j.name.toLowerCase()} ${city}\`` : '';
-        return `• *${j.name}*${loc ? `  —  ${loc}` : ''}${hint ? `\n  → ${hint}` : ''}`;
-      });
-      return postBack(responseUrl, {
-        response_type: 'ephemeral',
-        text: `🔀  *${jobs.length} open reqs* match *"${roleName}"*. Add a location to your search:\n\n${lines.join('\n\n')}`
-      });
-    }
-
-    await fetchAndPostPipeline(jobs[0], responseUrl);
-
+    await showJobPicker(responseUrl, 'Select a role to view its pipeline:');
   } catch (err) {
     console.error('Pipeline error:', err);
     await postBack(responseUrl, { response_type: 'ephemeral', text: `⚠️  Something went wrong. \`${err.message}\`` });
