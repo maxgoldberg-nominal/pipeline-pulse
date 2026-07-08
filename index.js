@@ -97,10 +97,13 @@ async function getPendingScorecards(jobId) {
 
 // ── Slack Block Kit formatter ────────────────────────────────────────────────
 function buildBlocks(job, applications, stageOrder = new Map()) {
-  // Group by stage
+  const EXCLUDED_STAGES = ['application review', 'new applicant'];
+
+  // Group by stage, skipping inbox/review stages
   const stageMap = new Map();
   for (const app of applications) {
     const stage = app.current_stage?.name || 'Unknown';
+    if (EXCLUDED_STAGES.includes(stage.toLowerCase())) continue;
     if (!stageMap.has(stage)) stageMap.set(stage, []);
     stageMap.get(stage).push(app);
   }
