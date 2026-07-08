@@ -144,9 +144,11 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   const loc = jobLocation(job);
   const locText = loc ? `📍 ${loc}` : null;
 
-  // Recruiter
-  const r = applications[0]?.recruiter;
-  const recruiterName = r?.name || [r?.first_name, r?.last_name].filter(Boolean).join(' ') || null;
+  // Recruiter — from job hiring team
+  const recruiters = job.hiring_team?.recruiters || [];
+  const recruiterName = recruiters[0]?.name
+    || [recruiters[0]?.first_name, recruiters[0]?.last_name].filter(Boolean).join(' ')
+    || null;
   const recruiterText = recruiterName ? `👤 ${recruiterName}` : null;
 
   const metaParts = [
@@ -277,8 +279,6 @@ app.post('/slack/pipeline', async (req, res) => {
       if (stage) allStageCounts.set(stage, (allStageCounts.get(stage) || 0) + 1);
     }
 
-    console.log('JOB_KEYS:', JSON.stringify(Object.keys(job)));
-    console.log('JOB_SAMPLE:', JSON.stringify(job).slice(0, 600));
     if (!applications.length) {
       return postBack(responseUrl, {
         response_type: 'ephemeral',
