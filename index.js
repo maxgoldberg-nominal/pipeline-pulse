@@ -83,20 +83,23 @@ async function getStageOrder(jobId) {
   return new Map(stages.map(s => [s.name, s.priority ?? 999]));
 }
 
-function gemProfileUrl(candidateId) {
+function gemApplicationUrl(candidateId, applicationId) {
   try {
     const decoded = Buffer.from(candidateId, 'base64').toString('utf8');
     const match = decoded.match(/:(\d+)/);
-    if (match) return `https://app.gem.com/people/${match[1]}`;
+    if (match) {
+      const personId = Buffer.from(`Person:${match[1]}`).toString('base64');
+      return `https://www.gem.com/candidate/${personId}/applications/${applicationId}`;
+    }
   } catch {}
-  return `https://app.gem.com/candidates/${candidateId}`;
+  return null;
 }
 
 async function getCandidate(candidateId) {
   try {
     const c = await gemGet(`/ats/v0/candidates/${candidateId}`);
     const name = c.name || [c.first_name, c.last_name].filter(Boolean).join(' ') || null;
-    return name ? { name, url: gemProfileUrl(candidateId) } : null;
+    return name ? { name } : null;
   } catch {
     return null;
   }
@@ -181,7 +184,7 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   function candidateLink(app) {
     const c = candidateNames.get(app.candidate_id);
     if (!c) return null;
-    return `<${c.url}|${c.name}>`;
+    return c.url ? `<${c.url}|${c.name}>` : c.name;
   }
 
   for (let i = 0; i < stageEntries.length; i++) {
@@ -299,15 +302,19 @@ app.post('/slack/pipeline', async (req, res) => {
       if (!stageGroups.has(stage)) stageGroups.set(stage, []);
       stageGroups.get(stage).push(app);
     }
-    const needNames = new Set();
+    const needNames = new Map(); // candidate_id → application_id
     for (const [stage, apps] of stageGroups) {
       const isLate = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
       if (isLate || apps.length <= 5) {
-        for (const a of apps) { if (a.candidate_id) needNames.add(a.candidate_id); }
+        for (const a of apps) { if (a.candidate_id) needNames.set(a.candidate_id, a.id); }
       }
     }
     const nameEntries = await Promise.all(
-      [...needNames].map(async id => [id, await getCandidate(id)])
+      [...needNames.entries()].map(async ([candidateId, appId]) => {
+        const c = await getCandidate(candidateId);
+        if (!c) return [candidateId, null];
+        return [candidateId, { name: c.name, url: gemApplicationUrl(candidateId, appId) }];
+      })
     );
     const candidateNames = new Map(nameEntries.filter(([, c]) => c));
 
