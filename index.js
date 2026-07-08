@@ -47,22 +47,25 @@ async function findJobs(query) {
   const jobs = await gemGet('/ats/v0/jobs/?per_page=500&status=open');
   const q = query.toLowerCase().trim();
 
-  // Step 1: match by name (exact first, then partial)
-  let byName = jobs.filter(j => j.name.toLowerCase() === q);
-  if (!byName.length) byName = jobs.filter(j => j.name.toLowerCase().includes(q));
+  // 1. Exact name match
+  const exact = jobs.filter(j => j.name.toLowerCase() === q);
+  if (exact.length) return exact;
 
-  // Single match — done
-  if (byName.length <= 1) return byName;
+  // 2. Query contains the job name — handles "enterprise account executive los angeles"
+  //    where the role name is a substring of what the user typed
+  const nameInQuery = jobs.filter(j => q.includes(j.name.toLowerCase()));
+  if (nameInQuery.length) {
+    if (nameInQuery.length === 1) return nameInQuery;
+    // Narrow by location words in the query
+    const narrow = nameInQuery.filter(j => {
+      const loc = jobLocation(j).toLowerCase();
+      return loc.split(/[\s,]+/).some(word => word.length > 2 && q.includes(word));
+    });
+    return narrow.length ? narrow : nameInQuery;
+  }
 
-  // Step 2: multiple name matches — try to narrow by location words in the query
-  const narrow = byName.filter(j => {
-    const loc = jobLocation(j).toLowerCase();
-    if (!loc) return false;
-    // Match if any meaningful word from the location appears in the query
-    return loc.split(/[\s,]+/).some(word => word.length > 2 && q.includes(word));
-  });
-
-  return narrow.length ? narrow : byName;
+  // 3. Job name contains query — handles partial searches like "/pipeline baremetal"
+  return jobs.filter(j => j.name.toLowerCase().includes(q));
 }
 
 async function getActiveApplications(jobId) {
