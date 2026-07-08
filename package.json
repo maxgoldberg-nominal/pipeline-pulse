@@ -1,0 +1,16 @@
+{
+  "name": "pipeline-pulse",
+  "version": "1.0.0",
+  "description": "Hiring pipeline visibility for every manager — right in Slack",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
