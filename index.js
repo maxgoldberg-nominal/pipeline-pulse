@@ -151,6 +151,16 @@ function buildBlocks(job, applications, stageOrder = new Map()) {
     { type: 'divider' }
   ];
 
+  // Stages where we show individual candidate names
+  const LATE_STAGE_KEYWORDS = ['on-site', 'onsite', 'on site', 'offer', 'reference', 'final', 'executive', 'panel', 'debrief'];
+
+  function candidateName(app) {
+    const c = app.candidate || app.applicant || {};
+    if (c.name) return c.name;
+    if (c.first_name || c.last_name) return [c.first_name, c.last_name].filter(Boolean).join(' ');
+    return null;
+  }
+
   for (let i = 0; i < stageEntries.length; i++) {
     const [stage, apps] = stageEntries[i];
     const count = apps.length;
@@ -162,11 +172,19 @@ function buildBlocks(job, applications, stageOrder = new Map()) {
       ? `  ↓ ${Math.round((count / stageEntries[i - 1][1].length) * 100)}%`
       : '';
 
+    // Show names for late-stage candidates (on-site+) or any stage with ≤5 people
+    const isLateStage = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
+    const names = (isLateStage || count <= 5)
+      ? apps.map(candidateName).filter(Boolean)
+      : [];
+
+    const nameList = names.length ? '\n' + names.map(n => `  › ${n}`).join('\n') : '';
+
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${stage}*${funnelText}\n\`${bar}\`  *${count}*`
+        text: `*${stage}*${funnelText}\n\`${bar}\`  *${count}*${nameList}`
       }
     });
   }
