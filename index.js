@@ -172,15 +172,7 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
     const filled = Math.round((count / maxCount) * 12);
     const bar = '█'.repeat(filled) + '░'.repeat(12 - filled);
 
-    // Funnel conversion from previous stage using all-time counts (active + rejected)
-    // This gives the true pass-through rate, not just who's currently active
-    const prevStageName = i > 0 ? stageEntries[i - 1][0] : null;
-    const prevTotal = prevStageName
-      ? (allStageCounts.get(prevStageName) || stageEntries[i - 1][1].length)
-      : null;
-    const currTotal = allStageCounts.get(stage) || count;
-    const convPct = prevTotal ? Math.round((currTotal / prevTotal) * 100) : null;
-    const funnelText = (convPct !== null && convPct <= 100) ? `  ↓ ${convPct}%` : '';
+    const funnelText = '';
 
     // Show names for late-stage candidates (on-site+) or any stage with ≤5 people
     const isLateStage = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
