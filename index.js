@@ -83,15 +83,20 @@ async function getStageOrder(jobId) {
   return new Map(stages.map(s => [s.name, s.priority ?? 999]));
 }
 
+function gemProfileUrl(candidateId) {
+  try {
+    const decoded = Buffer.from(candidateId, 'base64').toString('utf8');
+    const match = decoded.match(/:(\d+)/);
+    if (match) return `https://app.gem.com/people/${match[1]}`;
+  } catch {}
+  return `https://app.gem.com/candidates/${candidateId}`;
+}
+
 async function getCandidate(candidateId) {
   try {
     const c = await gemGet(`/ats/v0/candidates/${candidateId}`);
-    console.log('CANDIDATE_KEYS:', JSON.stringify(Object.keys(c)));
-    console.log('CANDIDATE_SAMPLE:', JSON.stringify(c).slice(0, 500));
     const name = c.name || [c.first_name, c.last_name].filter(Boolean).join(' ') || null;
-    const url = c.profile_url || c.url || c.gem_url || c.link
-      || `https://app.gem.com/candidates/${candidateId}`;
-    return name ? { name, url } : null;
+    return name ? { name, url: gemProfileUrl(candidateId) } : null;
   } catch {
     return null;
   }
@@ -301,11 +306,9 @@ app.post('/slack/pipeline', async (req, res) => {
         for (const a of apps) { if (a.candidate_id) needNames.add(a.candidate_id); }
       }
     }
-    console.log('NEED_NAMES_COUNT:', needNames.size, 'IDS:', [...needNames].slice(0, 3));
     const nameEntries = await Promise.all(
       [...needNames].map(async id => [id, await getCandidate(id)])
     );
-    console.log('NAME_ENTRIES:', JSON.stringify(nameEntries.slice(0, 3)));
     const candidateNames = new Map(nameEntries.filter(([, c]) => c));
 
     const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames);
