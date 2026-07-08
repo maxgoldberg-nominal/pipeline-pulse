@@ -119,6 +119,25 @@ function buildBlocks(job, applications, stageOrder = new Map()) {
 
   const total = applications.length;
   const maxCount = Math.max(...[...sortedStageMap.values()].map(a => a.length), 1);
+  const stageEntries = [...sortedStageMap.entries()];
+
+  // Req age
+  const reqAgeDays = job.created_at
+    ? Math.floor((Date.now() - new Date(job.created_at)) / 86_400_000)
+    : null;
+  const reqAgeText = reqAgeDays !== null
+    ? `📅 Open ${reqAgeDays}d`
+    : null;
+
+  // Location
+  const loc = jobLocation(job);
+  const locText = loc ? `📍 ${loc}` : null;
+
+  const metaParts = [
+    `*${total} active candidate${total !== 1 ? 's' : ''}*`,
+    locText,
+    reqAgeText,
+  ].filter(Boolean);
 
   const blocks = [
     {
@@ -127,24 +146,27 @@ function buildBlocks(job, applications, stageOrder = new Map()) {
     },
     {
       type: 'context',
-      elements: [{
-        type: 'mrkdwn',
-        text: `*${total} active candidate${total !== 1 ? 's' : ''}*  ·  ${stageMap.size} stage${stageMap.size !== 1 ? 's' : ''}`
-      }]
+      elements: [{ type: 'mrkdwn', text: metaParts.join('  ·  ') }]
     },
     { type: 'divider' }
   ];
 
-  for (const [stage, apps] of sortedStageMap) {
+  for (let i = 0; i < stageEntries.length; i++) {
+    const [stage, apps] = stageEntries[i];
     const count = apps.length;
-    // Bar: scale to max 12 blocks
     const filled = Math.round((count / maxCount) * 12);
     const bar = '█'.repeat(filled) + '░'.repeat(12 - filled);
+
+    // Funnel conversion from previous stage
+    const funnelText = i > 0
+      ? `  ↓ ${Math.round((count / stageEntries[i - 1][1].length) * 100)}%`
+      : '';
+
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${stage}*\n\`${bar}\`  *${count}*`
+        text: `*${stage}*${funnelText}\n\`${bar}\`  *${count}*`
       }
     });
   }
