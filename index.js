@@ -157,8 +157,13 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
     const filled = Math.round((count / maxCount) * 12);
     const bar = '█'.repeat(filled) + '░'.repeat(12 - filled);
     const isLateStage = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
-    const names = (isLateStage || count <= 5) ? apps.map(candidateLink).filter(Boolean) : [];
-    const nameList = names.length ? '\n' + names.map(n => `  › ${n}`).join('\n') : '';
+    const sortedApps = [...apps].sort((a, b) => new Date(b.last_activity_at) - new Date(a.last_activity_at));
+    const showAll = isLateStage || count <= 5;
+    const displayApps = showAll ? sortedApps : sortedApps.slice(0, 5);
+    const names = displayApps.map(candidateLink).filter(Boolean);
+    const overflow = count - displayApps.length;
+    const overflowText = overflow > 0 && names.length > 0 ? `\n  _+${overflow} more_` : '';
+    const nameList = names.length ? '\n' + names.map(n => `  › ${n}`).join('\n') + overflowText : '';
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*${stage}*\n\`${bar}\`  *${count}*${nameList}` }
@@ -224,9 +229,9 @@ async function fetchAndPostPipeline(job, responseUrl) {
   const needNames = new Map();
   for (const [stage, apps] of stageGroups) {
     const isLate = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
-    if (isLate || apps.length <= 5) {
-      for (const a of apps) { if (a.candidate_id) needNames.set(a.candidate_id, a.id); }
-    }
+    const sorted = [...apps].sort((a, b) => new Date(b.last_activity_at) - new Date(a.last_activity_at));
+    const limit = (isLate || apps.length <= 5) ? sorted.length : 5;
+    for (const a of sorted.slice(0, limit)) { if (a.candidate_id) needNames.set(a.candidate_id, a.id); }
   }
 
   const nameEntries = await Promise.all(
