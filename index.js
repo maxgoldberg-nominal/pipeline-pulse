@@ -105,22 +105,9 @@ async function getCandidate(candidateId) {
   }
 }
 
-async function getPendingScorecards(jobId) {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const interviews = await gemGet(
-    `/ats/v0/scheduled_interviews/?job_id=${jobId}&ends_before=${cutoff}&per_page=500`
-  ).catch(() => []);
-  let pending = 0;
-  for (const interview of interviews) {
-    for (const interviewer of interview.interviewers || []) {
-      if (!interviewer.scorecard_id) pending++;
-    }
-  }
-  return pending;
-}
 
 // ── Slack Block Kit formatter ────────────────────────────────────────────────
-function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts = new Map(), candidateNames = new Map(), pendingScorecards = 0) {
+function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts = new Map(), candidateNames = new Map()) {
   const EXCLUDED_STAGES = ['application review', 'new applicant'];
 
   // Group by stage, skipping inbox/review stages
@@ -221,13 +208,9 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   }
 
   blocks.push({ type: 'divider' });
-  const footerParts = [
-    `_Live from Gem ATS · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}_`,
-    pendingScorecards > 0 ? `⚠️ *${pendingScorecards} pending scorecard${pendingScorecards !== 1 ? 's' : ''}*` : null,
-  ].filter(Boolean);
   blocks.push({
     type: 'context',
-    elements: [{ type: 'mrkdwn', text: footerParts.join('  ·  ') }]
+    elements: [{ type: 'mrkdwn', text: `_Live from Gem ATS · ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}_` }]
   });
 
   return blocks;
@@ -281,11 +264,10 @@ app.post('/slack/pipeline', async (req, res) => {
     }
 
     const job = jobs[0];
-    const [applications, allApplications, stageOrder, pendingScorecards] = await Promise.all([
+    const [applications, allApplications, stageOrder] = await Promise.all([
       getActiveApplications(job.id),
       getAllApplications(job.id),
-      getStageOrder(job.id),
-      getPendingScorecards(job.id)
+      getStageOrder(job.id)
     ]);
 
     // Build stage counts from ALL applications for accurate funnel %
@@ -328,7 +310,7 @@ app.post('/slack/pipeline', async (req, res) => {
     );
     const candidateNames = new Map(nameEntries.filter(([, c]) => c));
 
-    const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames, pendingScorecards);
+    const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames);
     await postBack(responseUrl, { response_type: 'in_channel', blocks });
 
   } catch (err) {
