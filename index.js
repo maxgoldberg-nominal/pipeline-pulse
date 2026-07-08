@@ -39,15 +39,19 @@ async function gemGet(path) {
   return res.json();
 }
 
-async function findJob(query) {
-  // Fetch all open jobs and fuzzy-match by name
+async function findJobs(query) {
+  // Fetch all open jobs and fuzzy-match by name — returns ALL matches
   const jobs = await gemGet('/ats/v0/jobs/?per_page=500&status=open');
   const q = query.toLowerCase().trim();
-  // Exact match first, then partial
-  return (
-    jobs.find(j => j.name.toLowerCase() === q) ||
-    jobs.find(j => j.name.toLowerCase().includes(q))
-  );
+  const exact = jobs.filter(j => j.name.toLowerCase() === q);
+  if (exact.length) return exact;
+  return jobs.filter(j => j.name.toLowerCase().includes(q));
+}
+
+function jobLabel(job) {
+  // Build a human-readable label including location if available
+  const loc = job.location?.name || job.office?.name || job.offices?.[0]?.name;
+  return loc ? `${job.name}  _(${loc})_` : job.name;
 }
 
 async function getActiveApplications(jobId) {
@@ -149,15 +153,25 @@ app.post('/slack/pipeline', async (req, res) => {
   });
 
   try {
-    const job = await findJob(roleName);
+    const jobs = await findJobs(roleName);
 
-    if (!job) {
+    if (!jobs.length) {
       return postBack(responseUrl, {
         response_type: 'ephemeral',
         text: `❌  No open job found matching *"${roleName}"*.\nCheck the role name and try again.`
       });
     }
 
+    // Multiple distinct reqs — ask the user to be more specific
+    if (jobs.length > 1) {
+      const list = jobs.map(j => `• ${jobLabel(j)}`).join('\n');
+      return postBack(responseUrl, {
+        response_type: 'ephemeral',
+        text: `🔀  *${jobs.length} open roles* match *"${roleName}"*. Use a more specific name:\n\n${list}`
+      });
+    }
+
+    const job = jobs[0];
     const applications = await getActiveApplications(job.id);
 
     if (!applications.length) {
