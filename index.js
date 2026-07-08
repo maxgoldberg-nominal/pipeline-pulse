@@ -277,6 +277,7 @@ app.post('/slack/pipeline', async (req, res) => {
       if (stage) allStageCounts.set(stage, (allStageCounts.get(stage) || 0) + 1);
     }
 
+    console.log('RECRUITER:', JSON.stringify(applications[0]?.recruiter));
     if (!applications.length) {
       return postBack(responseUrl, {
         response_type: 'ephemeral',
