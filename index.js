@@ -86,6 +86,8 @@ async function getStageOrder(jobId) {
 async function getCandidate(candidateId) {
   try {
     const c = await gemGet(`/ats/v0/candidates/${candidateId}`);
+    console.log('CANDIDATE_KEYS:', JSON.stringify(Object.keys(c)));
+    console.log('CANDIDATE_SAMPLE:', JSON.stringify(c).slice(0, 500));
     const name = c.name || [c.first_name, c.last_name].filter(Boolean).join(' ') || null;
     const url = c.profile_url || c.url || c.gem_url || c.link
       || `https://app.gem.com/candidates/${candidateId}`;
