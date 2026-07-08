@@ -148,7 +148,7 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
     const days = app.last_activity_at
       ? Math.floor((Date.now() - new Date(app.last_activity_at)) / 86_400_000)
       : null;
-    const stale = (days !== null && days > 5) ? `  _${days}d ago_` : '';
+    const stale = days !== null ? `  _${days}d ago_` : '';
     return nameStr + stale;
   }
 
