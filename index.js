@@ -43,20 +43,24 @@ function jobLocation(job) {
   return job.location?.name || job.offices?.map(o => o.name).join(', ') || job.office?.name || '';
 }
 
+function normalizeDashes(str) {
+  return str.replace(/[–—−]/g, '-'); // en dash, em dash, minus → hyphen
+}
+
 async function findJobs(query) {
   const jobs = await gemGet('/ats/v0/jobs/?per_page=500&status=open');
-  const q = query.toLowerCase().trim();
+  const q = normalizeDashes(query.toLowerCase().trim());
+
+  const jn = j => normalizeDashes(j.name.toLowerCase());
 
   // 1. Exact name match
-  const exact = jobs.filter(j => j.name.toLowerCase() === q);
+  const exact = jobs.filter(j => jn(j) === q);
   if (exact.length) return exact;
 
   // 2. Query contains the job name — handles "enterprise account executive los angeles"
-  //    where the role name is a substring of what the user typed
-  const nameInQuery = jobs.filter(j => q.includes(j.name.toLowerCase()));
+  const nameInQuery = jobs.filter(j => q.includes(jn(j)));
   if (nameInQuery.length) {
     if (nameInQuery.length === 1) return nameInQuery;
-    // Narrow by location words in the query
     const narrow = nameInQuery.filter(j => {
       const loc = jobLocation(j).toLowerCase();
       return loc.split(/[\s,]+/).some(word => word.length > 2 && q.includes(word));
@@ -65,7 +69,7 @@ async function findJobs(query) {
   }
 
   // 3. Job name contains query — handles partial searches like "/pipeline baremetal"
-  return jobs.filter(j => j.name.toLowerCase().includes(q));
+  return jobs.filter(j => jn(j).includes(q));
 }
 
 async function getActiveApplications(jobId) {
