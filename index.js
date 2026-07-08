@@ -72,6 +72,11 @@ async function getActiveApplications(jobId) {
   return gemGet(`/ats/v0/applications/?job_id=${jobId}&status=active&per_page=500`);
 }
 
+async function getAllApplications(jobId) {
+  // Fetch all statuses for accurate funnel calculation
+  return gemGet(`/ats/v0/applications/?job_id=${jobId}&per_page=500`).catch(() => []);
+}
+
 async function getStageOrder(jobId) {
   // Returns a Map of stage name → priority (lower = earlier in pipeline)
   const stages = await gemGet(`/ats/v0/jobs/${jobId}/stages`).catch(() => []);
@@ -96,7 +101,7 @@ async function getPendingScorecards(jobId) {
 }
 
 // ── Slack Block Kit formatter ────────────────────────────────────────────────
-function buildBlocks(job, applications, stageOrder = new Map()) {
+function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts = new Map()) {
   const EXCLUDED_STAGES = ['application review', 'new applicant'];
 
   // Group by stage, skipping inbox/review stages
@@ -167,10 +172,15 @@ function buildBlocks(job, applications, stageOrder = new Map()) {
     const filled = Math.round((count / maxCount) * 12);
     const bar = '█'.repeat(filled) + '░'.repeat(12 - filled);
 
-    // Funnel conversion from previous stage
-    const funnelText = i > 0
-      ? `  ↓ ${Math.round((count / stageEntries[i - 1][1].length) * 100)}%`
-      : '';
+    // Funnel conversion from previous stage using all-time counts (active + rejected)
+    // This gives the true pass-through rate, not just who's currently active
+    const prevStageName = i > 0 ? stageEntries[i - 1][0] : null;
+    const prevTotal = prevStageName
+      ? (allStageCounts.get(prevStageName) || stageEntries[i - 1][1].length)
+      : null;
+    const currTotal = allStageCounts.get(stage) || count;
+    const convPct = prevTotal ? Math.round((currTotal / prevTotal) * 100) : null;
+    const funnelText = (convPct !== null && convPct <= 100) ? `  ↓ ${convPct}%` : '';
 
     // Show names for late-stage candidates (on-site+) or any stage with ≤5 people
     const isLateStage = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
@@ -249,10 +259,22 @@ app.post('/slack/pipeline', async (req, res) => {
     }
 
     const job = jobs[0];
-    const [applications, stageOrder] = await Promise.all([
+    const [applications, allApplications, stageOrder] = await Promise.all([
       getActiveApplications(job.id),
+      getAllApplications(job.id),
       getStageOrder(job.id)
     ]);
+
+    // Temporary: log one application's structure to diagnose candidate name field
+    if (applications[0]) console.log('APP_KEYS:', JSON.stringify(Object.keys(applications[0])));
+    if (applications[0]) console.log('APP_CANDIDATE:', JSON.stringify(applications[0].candidate || applications[0].applicant || 'MISSING'));
+
+    // Build stage counts from ALL applications for accurate funnel %
+    const allStageCounts = new Map();
+    for (const app of allApplications) {
+      const stage = app.current_stage?.name;
+      if (stage) allStageCounts.set(stage, (allStageCounts.get(stage) || 0) + 1);
+    }
 
     if (!applications.length) {
       return postBack(responseUrl, {
@@ -261,7 +283,7 @@ app.post('/slack/pipeline', async (req, res) => {
       });
     }
 
-    const blocks = buildBlocks(job, applications, stageOrder);
+    const blocks = buildBlocks(job, applications, stageOrder, allStageCounts);
     await postBack(responseUrl, { response_type: 'in_channel', blocks });
 
   } catch (err) {
