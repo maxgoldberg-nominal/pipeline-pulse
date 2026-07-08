@@ -83,6 +83,17 @@ async function getStageOrder(jobId) {
   return new Map(stages.map(s => [s.name, s.priority ?? 999]));
 }
 
+async function getCandidateName(candidateId) {
+  try {
+    const c = await gemGet(`/ats/v0/candidates/${candidateId}`);
+    if (c.name) return c.name;
+    if (c.first_name || c.last_name) return [c.first_name, c.last_name].filter(Boolean).join(' ');
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function getPendingScorecards(jobId) {
   // Find interviews that happened but have no submitted scorecard
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // >24hrs ago
@@ -101,7 +112,7 @@ async function getPendingScorecards(jobId) {
 }
 
 // ── Slack Block Kit formatter ────────────────────────────────────────────────
-function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts = new Map()) {
+function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts = new Map(), candidateNames = new Map()) {
   const EXCLUDED_STAGES = ['application review', 'new applicant'];
 
   // Group by stage, skipping inbox/review stages
@@ -160,10 +171,7 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   const LATE_STAGE_KEYWORDS = ['on-site', 'onsite', 'on site', 'offer', 'reference', 'final', 'executive', 'panel', 'debrief'];
 
   function candidateName(app) {
-    const c = app.candidate || app.applicant || {};
-    if (c.name) return c.name;
-    if (c.first_name || c.last_name) return [c.first_name, c.last_name].filter(Boolean).join(' ');
-    return null;
+    return candidateNames.get(app.candidate_id) || null;
   }
 
   for (let i = 0; i < stageEntries.length; i++) {
@@ -257,10 +265,6 @@ app.post('/slack/pipeline', async (req, res) => {
       getStageOrder(job.id)
     ]);
 
-    // Temporary: log one application's structure to diagnose candidate name field
-    if (applications[0]) console.log('APP_KEYS:', JSON.stringify(Object.keys(applications[0])));
-    if (applications[0]) console.log('APP_CANDIDATE:', JSON.stringify(applications[0].candidate || applications[0].applicant || 'MISSING'));
-
     // Build stage counts from ALL applications for accurate funnel %
     const allStageCounts = new Map();
     for (const app of allApplications) {
@@ -275,7 +279,29 @@ app.post('/slack/pipeline', async (req, res) => {
       });
     }
 
-    const blocks = buildBlocks(job, applications, stageOrder, allStageCounts);
+    // Pre-fetch candidate names for late stages and small stages
+    const EXCLUDED_STAGES = ['application review', 'new applicant'];
+    const LATE_STAGE_KEYWORDS = ['on-site', 'onsite', 'on site', 'offer', 'reference', 'final', 'executive', 'panel', 'debrief'];
+    const stageGroups = new Map();
+    for (const app of applications) {
+      const stage = app.current_stage?.name || 'Unknown';
+      if (EXCLUDED_STAGES.includes(stage.toLowerCase())) continue;
+      if (!stageGroups.has(stage)) stageGroups.set(stage, []);
+      stageGroups.get(stage).push(app);
+    }
+    const needNames = new Set();
+    for (const [stage, apps] of stageGroups) {
+      const isLate = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
+      if (isLate || apps.length <= 5) {
+        for (const a of apps) { if (a.candidate_id) needNames.add(a.candidate_id); }
+      }
+    }
+    const nameEntries = await Promise.all(
+      [...needNames].map(async id => [id, await getCandidateName(id)])
+    );
+    const candidateNames = new Map(nameEntries.filter(([, name]) => name));
+
+    const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames);
     await postBack(responseUrl, { response_type: 'in_channel', blocks });
 
   } catch (err) {
