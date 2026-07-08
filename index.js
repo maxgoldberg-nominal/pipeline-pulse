@@ -83,12 +83,13 @@ async function getStageOrder(jobId) {
   return new Map(stages.map(s => [s.name, s.priority ?? 999]));
 }
 
-async function getCandidateName(candidateId) {
+async function getCandidate(candidateId) {
   try {
     const c = await gemGet(`/ats/v0/candidates/${candidateId}`);
-    if (c.name) return c.name;
-    if (c.first_name || c.last_name) return [c.first_name, c.last_name].filter(Boolean).join(' ');
-    return null;
+    const name = c.name || [c.first_name, c.last_name].filter(Boolean).join(' ') || null;
+    const url = c.profile_url || c.url || c.gem_url || c.link
+      || `https://app.gem.com/candidates/${candidateId}`;
+    return name ? { name, url } : null;
   } catch {
     return null;
   }
@@ -170,8 +171,10 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   // Stages where we show individual candidate names
   const LATE_STAGE_KEYWORDS = ['on-site', 'onsite', 'on site', 'offer', 'reference', 'final', 'executive', 'panel', 'debrief'];
 
-  function candidateName(app) {
-    return candidateNames.get(app.candidate_id) || null;
+  function candidateLink(app) {
+    const c = candidateNames.get(app.candidate_id);
+    if (!c) return null;
+    return `<${c.url}|${c.name}>`;
   }
 
   for (let i = 0; i < stageEntries.length; i++) {
@@ -185,7 +188,7 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
     // Show names for late-stage candidates (on-site+) or any stage with ≤5 people
     const isLateStage = LATE_STAGE_KEYWORDS.some(kw => stage.toLowerCase().includes(kw));
     const names = (isLateStage || count <= 5)
-      ? apps.map(candidateName).filter(Boolean)
+      ? apps.map(candidateLink).filter(Boolean)
       : [];
 
     const nameList = names.length ? '\n' + names.map(n => `  › ${n}`).join('\n') : '';
@@ -297,9 +300,9 @@ app.post('/slack/pipeline', async (req, res) => {
       }
     }
     const nameEntries = await Promise.all(
-      [...needNames].map(async id => [id, await getCandidateName(id)])
+      [...needNames].map(async id => [id, await getCandidate(id)])
     );
-    const candidateNames = new Map(nameEntries.filter(([, name]) => name));
+    const candidateNames = new Map(nameEntries.filter(([, c]) => c));
 
     const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames);
     await postBack(responseUrl, { response_type: 'in_channel', blocks });
