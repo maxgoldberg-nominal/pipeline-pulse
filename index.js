@@ -299,9 +299,11 @@ app.post('/slack/pipeline', async (req, res) => {
         for (const a of apps) { if (a.candidate_id) needNames.add(a.candidate_id); }
       }
     }
+    console.log('NEED_NAMES_COUNT:', needNames.size, 'IDS:', [...needNames].slice(0, 3));
     const nameEntries = await Promise.all(
       [...needNames].map(async id => [id, await getCandidate(id)])
     );
+    console.log('NAME_ENTRIES:', JSON.stringify(nameEntries.slice(0, 3)));
     const candidateNames = new Map(nameEntries.filter(([, c]) => c));
 
     const blocks = buildBlocks(job, applications, stageOrder, allStageCounts, candidateNames);
