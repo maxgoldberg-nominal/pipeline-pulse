@@ -165,6 +165,24 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
     });
   }
 
+  // Source breakdown
+  const sourceCounts = new Map();
+  for (const app of applications) {
+    const name = app.source?.public_name || app.source?.name || (typeof app.source === 'string' ? app.source : null);
+    if (name) sourceCounts.set(name, (sourceCounts.get(name) || 0) + 1);
+  }
+  if (sourceCounts.size > 0) {
+    const maxSource = Math.max(...sourceCounts.values());
+    const sortedSources = [...sourceCounts.entries()].sort(([, a], [, b]) => b - a);
+    const lines = sortedSources.map(([name, count]) => {
+      const pct = Math.round((count / total) * 100);
+      const filled = Math.round((count / maxSource) * 8);
+      const bar = '█'.repeat(filled) + '░'.repeat(8 - filled);
+      return `${name}  \`${bar}\`  ${count}  _${pct}%_`;
+    });
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*Source breakdown*\n${lines.join('\n')}` } });
+  }
+
   blocks.push({ type: 'divider' });
   blocks.push({
     type: 'context',
