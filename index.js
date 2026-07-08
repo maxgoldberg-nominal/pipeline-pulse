@@ -39,19 +39,30 @@ async function gemGet(path) {
   return res.json();
 }
 
-async function findJobs(query) {
-  // Fetch all open jobs and fuzzy-match by name — returns ALL matches
-  const jobs = await gemGet('/ats/v0/jobs/?per_page=500&status=open');
-  const q = query.toLowerCase().trim();
-  const exact = jobs.filter(j => j.name.toLowerCase() === q);
-  if (exact.length) return exact;
-  return jobs.filter(j => j.name.toLowerCase().includes(q));
+function jobLocation(job) {
+  return job.location?.name || job.offices?.map(o => o.name).join(', ') || job.office?.name || '';
 }
 
-function jobLabel(job) {
-  // Build a human-readable label including location if available
-  const loc = job.location?.name || job.office?.name || job.offices?.[0]?.name;
-  return loc ? `${job.name}  _(${loc})_` : job.name;
+async function findJobs(query) {
+  const jobs = await gemGet('/ats/v0/jobs/?per_page=500&status=open');
+  const q = query.toLowerCase().trim();
+
+  // Step 1: match by name (exact first, then partial)
+  let byName = jobs.filter(j => j.name.toLowerCase() === q);
+  if (!byName.length) byName = jobs.filter(j => j.name.toLowerCase().includes(q));
+
+  // Single match — done
+  if (byName.length <= 1) return byName;
+
+  // Step 2: multiple name matches — try to narrow by location words in the query
+  const narrow = byName.filter(j => {
+    const loc = jobLocation(j).toLowerCase();
+    if (!loc) return false;
+    // Match if any meaningful word from the location appears in the query
+    return loc.split(/[\s,]+/).some(word => word.length > 2 && q.includes(word));
+  });
+
+  return narrow.length ? narrow : byName;
 }
 
 async function getActiveApplications(jobId) {
@@ -162,12 +173,17 @@ app.post('/slack/pipeline', async (req, res) => {
       });
     }
 
-    // Multiple distinct reqs — ask the user to be more specific
+    // Multiple reqs still ambiguous after location filtering — ask user to specify
     if (jobs.length > 1) {
-      const list = jobs.map(j => `• ${jobLabel(j)}`).join('\n');
+      const lines = jobs.map(j => {
+        const loc = jobLocation(j);
+        const city = loc.split(',')[0].trim().toLowerCase();
+        const hint = city ? `\`/pipeline ${jobs[0].name.toLowerCase()} ${city}\`` : '';
+        return `• *${j.name}*${loc ? `  —  ${loc}` : ''}${hint ? `\n  → ${hint}` : ''}`;
+      });
       return postBack(responseUrl, {
         response_type: 'ephemeral',
-        text: `🔀  *${jobs.length} open roles* match *"${roleName}"*. Use a more specific name:\n\n${list}`
+        text: `🔀  *${jobs.length} open reqs* match *"${roleName}"*. Add a location to your search:\n\n${lines.join('\n\n')}`
       });
     }
 
