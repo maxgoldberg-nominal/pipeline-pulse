@@ -3,16 +3,12 @@ const crypto = require('crypto');
 
 const app = express();
 
-// Capture raw body for Slack signature verification
-app.use((req, res, next) => {
-  let data = '';
-  req.on('data', chunk => (data += chunk));
-  req.on('end', () => {
-    req.rawBody = data;
-    next();
-  });
-});
-app.use(express.urlencoded({ extended: true }));
+// Parse body & capture raw bytes for Slack signature verification
+// The verify callback runs before parsing, giving us the exact bytes Slack signed
+app.use(express.urlencoded({
+  extended: true,
+  verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); }
+}));
 app.use(express.json());
 
 const GEM_API_KEY = process.env.GEM_API_KEY;
