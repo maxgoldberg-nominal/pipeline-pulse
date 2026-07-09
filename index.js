@@ -78,6 +78,15 @@ async function getStageOrder(jobId) {
   return new Map(stages.map(s => [s.name, s.priority ?? 999]));
 }
 
+function gemJobUrl(jobId) {
+  try {
+    const decoded = Buffer.from(jobId, 'base64').toString('utf8');
+    const match = decoded.match(/:(\d+)/);
+    if (match) return `https://app.gem.com/requisitions/${match[1]}`;
+  } catch {}
+  return null;
+}
+
 function gemApplicationUrl(candidateId, applicationId) {
   try {
     const decoded = Buffer.from(candidateId, 'base64').toString('utf8');
@@ -135,6 +144,8 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
     recruiterName ? `👤 ${recruiterName}` : null,
   ].filter(Boolean);
 
+  const jobUrl = gemJobUrl(job.id);
+  if (jobUrl) metaParts.push(`<${jobUrl}|🔗 View in Gem>`);
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `📋  ${job.name}`, emoji: true } },
     { type: 'context', elements: [{ type: 'mrkdwn', text: metaParts.join('  ·  ') }] },
