@@ -145,6 +145,7 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   ].filter(Boolean);
 
   const jobUrl = gemJobUrl(job.id);
+  console.log('JOB_ID:', job.id, 'JOB_URL:', jobUrl);
   if (jobUrl) metaParts.push(`<${jobUrl}|🔗 View in Gem>`);
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `📋  ${job.name}`, emoji: true } },
