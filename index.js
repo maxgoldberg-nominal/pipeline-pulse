@@ -313,6 +313,7 @@ app.post('/slack/actions', async (req, res) => {
     const jobId = action.selected_option.value;
     const allJobs = await gemGet('/ats/v0/jobs/?per_page=500&status=open');
     const job = allJobs.find(j => j.id === jobId);
+    if (job) console.log('DEPT_FIELD:', JSON.stringify({ department: job.department, departments: job.departments }));
     if (!job) return postBack(responseUrl, { response_type: 'ephemeral', text: '❌  Job not found.' });
     await fetchAndPostPipeline(job, responseUrl);
   } catch (err) {
