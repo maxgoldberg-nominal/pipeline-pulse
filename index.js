@@ -80,9 +80,14 @@ async function getStageOrder(jobId) {
 
 function gemJobUrl(jobId) {
   try {
-    const decoded = Buffer.from(jobId, 'base64').toString('utf8');
-    const match = decoded.match(/:(\d+)/);
-    if (match) return `https://app.gem.com/requisitions/${match[1]}`;
+    const padded = jobId + '='.repeat((4 - jobId.length % 4) % 4);
+    const bytes = Buffer.from(padded, 'base64');
+    // bytes = "job:" (4 bytes) + UUID (16 bytes)
+    if (bytes.length >= 20) {
+      const hex = bytes.slice(4, 20).toString('hex');
+      const uuid = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
+      return `https://www.gem.com/ats/jobs/${uuid}/candidates`;
+    }
   } catch {}
   return null;
 }
@@ -145,7 +150,6 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   ].filter(Boolean);
 
   const jobUrl = gemJobUrl(job.id);
-  console.log('JOB_ID:', job.id, 'JOB_URL:', jobUrl);
   if (jobUrl) metaParts.push(`<${jobUrl}|🔗 View in Gem>`);
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `📋  ${job.name}`, emoji: true } },
