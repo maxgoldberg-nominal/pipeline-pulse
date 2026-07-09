@@ -313,7 +313,19 @@ app.post('/slack/actions', async (req, res) => {
     const jobId = action.selected_option.value;
     const allJobs = await gemGet('/ats/v0/jobs/?per_page=500&status=open');
     const job = allJobs.find(j => j.id === jobId);
-    if (job) console.log('DEPT_FIELD:', JSON.stringify({ department: job.department, departments: job.departments }));
+    if (job) {
+      // Test: does a departments endpoint exist?
+      const depts = await gemGet('/ats/v0/departments').catch(e => `ERROR: ${e.message}`);
+      console.log('DEPTS_ENDPOINT:', JSON.stringify(depts).slice(0, 500));
+
+      // Test: can we filter jobs by a child department ID?
+      const parentDept = job.departments?.[0];
+      const childId = parentDept?.child_ids?.[0];
+      if (childId) {
+        const filteredJobs = await gemGet(`/ats/v0/jobs/?department_id=${childId}&status=open&per_page=10`).catch(e => `ERROR: ${e.message}`);
+        console.log('DEPT_FILTER_TEST (child_id:', childId, '):', JSON.stringify(filteredJobs).slice(0, 300));
+      }
+    }
     if (!job) return postBack(responseUrl, { response_type: 'ephemeral', text: '❌  Job not found.' });
     await fetchAndPostPipeline(job, responseUrl);
   } catch (err) {
