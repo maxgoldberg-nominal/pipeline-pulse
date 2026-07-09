@@ -150,6 +150,9 @@ function buildBlocks(job, applications, stageOrder = new Map(), allStageCounts =
   ].filter(Boolean);
 
   const jobUrl = gemJobUrl(job.id);
+  const padded = job.id + '='.repeat((4 - job.id.length % 4) % 4);
+  const bytes = Buffer.from(padded, 'base64');
+  console.log('JOB_ID:', job.id, 'BYTES_HEX:', bytes.toString('hex'), 'URL:', jobUrl);
   if (jobUrl) metaParts.push(`<${jobUrl}|🔗 View in Gem>`);
   const blocks = [
     { type: 'header', text: { type: 'plain_text', text: `📋  ${job.name}`, emoji: true } },
