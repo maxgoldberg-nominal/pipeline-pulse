@@ -11,7 +11,25 @@ app.use(express.json());
 
 const GEM_API_KEY = process.env.GEM_API_KEY;
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
+const ALLOWED_USER_GROUP_ID = process.env.ALLOWED_USER_GROUP_ID;
 const PORT = process.env.PORT || 3000;
+
+// ── User group access check (cached 5 min) ────────────────────────────────────
+let groupCache = { members: null, fetchedAt: 0 };
+async function isUserAllowed(userId) {
+  if (!ALLOWED_USER_GROUP_ID) return true;
+  const now = Date.now();
+  if (!groupCache.members || now - groupCache.fetchedAt > 5 * 60 * 1000) {
+    const res = await fetch(`https://slack.com/api/usergroups.users.list?usergroup=${ALLOWED_USER_GROUP_ID}`, {
+      headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` }
+    });
+    const data = await res.json();
+    if (data.ok) groupCache = { members: new Set(data.users), fetchedAt: now };
+    else { console.error('User group fetch failed:', data.error); return false; }
+  }
+  return groupCache.members.has(userId);
+}
 
 const EXCLUDED_STAGES = ['application review', 'new applicant'];
 const LATE_STAGE_KEYWORDS = ['on-site', 'onsite', 'on site', 'offer', 'reference', 'final', 'executive', 'panel', 'debrief'];
@@ -286,7 +304,13 @@ async function showJobPicker(responseUrl, message) {
 app.post('/slack/pipeline', async (req, res) => {
   if (SLACK_SIGNING_SECRET && !verifySlack(req)) return res.status(401).json({ error: 'Invalid signature' });
 
+  const userId = req.body.user_id;
   const responseUrl = req.body.response_url;
+
+  if (!(await isUserAllowed(userId))) {
+    return res.json({ response_type: 'ephemeral', text: "🔒  You don't have access to Pipeline Pulse. Reach out to your recruiting team." });
+  }
+
   res.json({ response_type: 'ephemeral', text: '🔍  Loading open roles...' });
 
   try {
@@ -304,6 +328,11 @@ app.post('/slack/actions', async (req, res) => {
   const payload = JSON.parse(req.body.payload);
   const action = payload.actions?.[0];
   const responseUrl = payload.response_url;
+  const userId = payload.user?.id;
+
+  if (!(await isUserAllowed(userId))) {
+    return res.json({ response_type: 'ephemeral', text: "🔒  You don't have access to Pipeline Pulse." });
+  }
 
   if (action?.action_id !== 'select_job') return res.json({});
 
